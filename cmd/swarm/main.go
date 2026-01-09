@@ -8,6 +8,7 @@ import (
 
 	"github.com/aristath/claude-swarm/internal/orchestrator"
 	"github.com/aristath/claude-swarm/internal/state"
+	"github.com/aristath/claude-swarm/internal/tui"
 	"github.com/aristath/claude-swarm/internal/workflow"
 	"github.com/urfave/cli/v2"
 )
@@ -64,34 +65,14 @@ func initSession(c *cli.Context) error {
 		}
 	}
 
-	// Create default files
-	planFile := filepath.Join(swarmDir, "plan.md")
-	if err := os.WriteFile(planFile, []byte("# Plan\n\nDescribe your plan here...\n"), 0644); err != nil {
-		return fmt.Errorf("failed to create plan file: %w", err)
-	}
-
-	workflowFile := filepath.Join(swarmDir, "workflow.yaml")
-	workflowTemplate := `name: "My Workflow"
-description: "Description of the workflow"
-
-tasks:
-  - id: "task1"
-    agent_type: "general-purpose"
-    description: "First task"
-    prompt: |
-      Describe the task here...
-    depends_on: []
-`
-	if err := os.WriteFile(workflowFile, []byte(workflowTemplate), 0644); err != nil {
-		return fmt.Errorf("failed to create workflow file: %w", err)
-	}
-
 	fmt.Printf("Swarm session initialized: %s\n", sessionID)
 	fmt.Printf("Directory: %s\n\n", swarmDir)
-	fmt.Printf("Next steps:\n")
-	fmt.Printf("1. Edit the plan: %s\n", planFile)
-	fmt.Printf("2. Edit the workflow: %s\n", workflowFile)
-	fmt.Printf("3. Run the workflow: swarm run --workflow %s --plan %s\n", workflowFile, planFile)
+	fmt.Printf("Launching interactive planning mode...\n\n")
+
+	// Launch TUI
+	if err := tui.Run(sessionID, swarmDir); err != nil {
+		return fmt.Errorf("TUI error: %w", err)
+	}
 
 	return nil
 }

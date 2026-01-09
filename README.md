@@ -55,18 +55,81 @@ sudo cp swarm-agent /usr/local/bin/
 
 ## Usage
 
-### 1. Initialize a Session
+### Interactive TUI Mode (Recommended)
+
+#### 1. Start Planning Session
 
 ```bash
 swarm init
 ```
 
-This creates:
-- Session directory at `~/.claude-swarm/swarm-<timestamp>/`
-- `plan.md` - Describe your plan here
-- `workflow.yaml` - Define your task workflow
+This launches the interactive TUI where you'll:
+1. **Plan Interactively** - Discuss your workflow with Claude A
+2. **Review Plan** - See the generated plan
+3. **Generate Workflow** - Automatically create workflow.yaml from discussion
+4. **Start Orchestration** - Transition to split-screen orchestration view
 
-### 2. Edit Plan and Workflow
+#### 2. Planning Mode
+
+In planning mode, you have a conversation with Claude A:
+
+```
+┌────────────────────────────────────────────┐
+│ Claude Swarm - Planning Discussion         │
+├────────────────────────────────────────────┤
+│ Session: swarm-xxx                         │
+│                                            │
+│ [Conversation View]                        │
+│                                            │
+│ You: I need to refactor the API           │
+│                                            │
+│ Claude A: Let's break this down...        │
+│                                            │
+│ [Your message input box]                   │
+│ Enter to send, Ctrl+D when done           │
+└────────────────────────────────────────────┘
+```
+
+- Type your messages and press **Enter**
+- Claude A responds (you play Claude A's role)
+- Plan builds incrementally
+- Press **Ctrl+D** when planning is complete
+- Press **G** to generate workflow
+- Press **S** to start orchestration
+
+#### 3. Orchestration Mode (Split-Screen)
+
+Once workflow starts, you see:
+
+```
+┌─────────────────────────────────┬──────────────────┐
+│ Orchestrator                    │ Active Agents    │
+│                                 │                  │
+│ Progress: [████░░░░] 40%       │ ⧗ analyze        │
+│                                 │   2m 12s ago     │
+│ Tasks:                          │   Q&A: 1         │
+│   ✓ analyze    [completed]     │                  │
+│   ⧗ plan       [running]       │ ⧗ plan          │
+│   ⋯ implement  [pending]       │   45s ago        │
+│                                 │                  │
+│ Recent Events:                  │ Recent Q&A       │
+│ 14:23:45 ✓ Spawned analyze     │ analyze → orch   │
+│ 14:26:19 ✓ Task completed      │ Q: Include...    │
+│ 14:26:32 💬 Question from plan  │ A: Yes...        │
+│ 14:26:34 💡 Answered            │                  │
+│                                 │                  │
+│ [Tab] Switch | [R] Refresh     │                  │
+└─────────────────────────────────┴──────────────────┘
+```
+
+**Controls:**
+- **Tab** - Switch between orchestrator and agent sidebar
+- **R** - Refresh view
+- **Q** - Quit
+
+### Manual Mode (Advanced)
+
+If you prefer to edit files directly:
 
 **plan.md** - Describe what you want to accomplish:
 ```markdown
@@ -252,8 +315,9 @@ echo "Here's the clarification..." > followup/a-1.txt
 
 ## Current Status
 
-### ✅ Implemented
+### ✅ Fully Implemented
 
+**Core System:**
 - Core orchestration engine
 - Event-driven file monitoring (fsnotify)
 - Workflow parser with validation
@@ -264,23 +328,24 @@ echo "Here's the clarification..." > followup/a-1.txt
 - Dependency resolution
 - Variable interpolation
 
-### 🚧 In Progress
+**Interactive TUI:**
+- ✅ Planning mode with conversational interface
+- ✅ Automatic workflow generation from discussions
+- ✅ Split-screen orchestration view
+- ✅ Real-time event log and agent monitoring
+- ✅ Progress indicators and status updates
+- ✅ Seamless state transitions (planning → orchestration)
+- ✅ Agent sidebar with Q&A display
 
-- Split-screen TUI (Bubbletea)
-  - Orchestrator view (main area)
-  - Agent sidebar (right panel)
-  - Real-time event log
-  - Progress indicators
+### 📋 Future Enhancements
 
-### 📋 Planned
-
-- Interactive planning mode in TUI
-- Workflow templates
-- Error recovery and retries
+- Workflow templates library
+- Error recovery and automatic retries
 - Concurrent agent limits
-- Web UI
-- Distributed mode (SSH)
-- CI/CD integration
+- Web UI for remote monitoring
+- Distributed mode (run agents via SSH)
+- CI/CD integration (GitHub Actions, GitLab CI)
+- Pre-built agent types (test-runner, code-reviewer, etc.)
 
 ## Example Workflow
 
