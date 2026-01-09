@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -268,6 +269,11 @@ func (o *Orchestrator) spawnAgent(task workflow.Task) error {
 		return fmt.Errorf("failed to write context file: %w", err)
 	}
 
+	// Generate Claude settings file for pre-approved permissions
+	if err := o.generateAgentSettings(agentDir); err != nil {
+		return fmt.Errorf("failed to generate agent settings: %w", err)
+	}
+
 	// Add agent to state
 	if err := o.state.AddAgent(task.ID, agentDir); err != nil {
 		return fmt.Errorf("failed to add agent to state: %w", err)
@@ -320,45 +326,61 @@ You are part of a Claude Swarm orchestration system.
 
 ## IMPORTANT: Swarm Protocol
 
-You can communicate with the orchestrator (Claude A) using the swarm-agent CLI:
+**HTTP API Endpoint**: http://localhost:8080
 
-1. **To ask a question**:
-   cd %s
-   swarm-agent ask "Your question here"
+You have TWO ways to communicate with the orchestrator:
 
-   The orchestrator will respond based on the original plan.
+1. **Direct Read Operations** (NO PERMISSION PROMPTS):
+   You have pre-approved permissions for reading and exploration:
 
-2. **File Operations via Message Bus** (NO PERMISSION PROMPTS):
-   All file operations go through the orchestrator - no permission prompts!
+   # Read files directly
+   cat /path/to/file
+   head /tail/less /path/to/file
 
-   # Read a file
-   swarm-agent file-read /path/to/file
+   # Explore codebase
+   ls -la
+   tree
+   find . -name "*.go"
+   grep -r "pattern" /path
+
+   # Git operations
+   git status
+   git log
+   git diff
+
+2. **HTTP API for Write Operations** (NO PERMISSION PROMPTS):
+   Use curl to make HTTP requests for writes:
 
    # Write a file
-   swarm-agent file-write /path/to/file "content here"
+   curl -X POST http://localhost:8080/api/file/write \
+     -H "Content-Type: application/json" \
+     -d '{"path":"/path/to/file","content":"file content here"}'
 
    # Edit a file (replace text)
-   swarm-agent file-edit /path/to/file --old "old text" --new "new text"
+   curl -X POST http://localhost:8080/api/file/edit \
+     -H "Content-Type: application/json" \
+     -d '{"path":"/path/to/file","old_string":"old","new_string":"new"}'
 
-   # Execute bash command
-   swarm-agent bash "ls -la" --dir /some/directory
+   # Execute bash command server-side
+   curl -X POST http://localhost:8080/api/bash \
+     -H "Content-Type: application/json" \
+     -d '{"command":"ls -la","working_dir":"/some/dir"}'
 
-   # Search for files with glob pattern
-   swarm-agent glob "**/*.go"
+3. **Ask Questions**:
+   curl -X POST http://localhost:8080/api/question \
+     -H "Content-Type: application/json" \
+     -d '{"agent_id":"%s","question":"Your question here"}'
 
-   IMPORTANT: Use these commands instead of trying to read/write files directly.
-   The orchestrator will execute operations on your behalf.
-
-3. **When you complete your task**:
-   swarm-agent complete --output "Your final output here"
-
-   This will mark the task as complete and trigger dependent tasks.
+4. **Complete Task**:
+   curl -X POST http://localhost:8080/api/complete \
+     -H "Content-Type: application/json" \
+     -d '{"agent_id":"%s","output":"Your results here"}'
 
 ## Instructions
-1. Work on your task autonomously
-2. Use swarm-agent commands for ALL file operations (no permission prompts)
-3. Ask questions if you need guidance (orchestrator has the full plan)
-4. Write your output when done using swarm-agent complete
+1. Use direct bash commands (cat, grep, ls, etc.) for reading - pre-approved!
+2. Use HTTP API (curl) for all write operations - no permission prompts!
+3. Ask questions via API if you need guidance
+4. Report completion via API when done
 5. Be thorough and follow the plan's intent
 
 Begin your task now.
@@ -370,7 +392,8 @@ Begin your task now.
 		interpolatedPrompt,
 		o.state.Plan,
 		previousOutputs,
-		filepath.Join(o.swarmDir, "agents", fmt.Sprintf("agent-%s", task.ID)),
+		task.ID, // For question API
+		task.ID, // For complete API
 	)
 }
 
@@ -385,20 +408,22 @@ cat %s
 
 Your working directory: %s
 
-You have access to the swarm-agent CLI tool for communication:
-- swarm-agent ask "question" - Ask the orchestrator for guidance
-- swarm-agent file-read <path> - Read a file (no permission prompts)
-- swarm-agent file-write <path> <content> - Write a file
-- swarm-agent file-edit <path> --old "..." --new "..." - Edit a file
-- swarm-agent bash <command> - Execute bash command
-- swarm-agent glob <pattern> - Search files with glob pattern
-- swarm-agent complete --output "results" - Mark task complete
+**IMPORTANT - NO PERMISSION PROMPTS:**
+- You have pre-approved permissions for READ operations (cat, grep, ls, etc.)
+- For WRITE operations, use HTTP API: http://localhost:8080
+- See context.txt for full API documentation and examples
 
 Environment variables:
 export SWARM_SESSION_ID=%s
 export SWARM_AGENT_DIR=%s
+export SWARM_API_URL=http://localhost:8080
 
-IMPORTANT: Use swarm-agent commands for ALL file operations to avoid permission prompts.
+Quick reference:
+# Read files directly (pre-approved)
+cat %s
+
+# Write via API (no permission prompts)
+curl -X POST $SWARM_API_URL/api/file/write -H "Content-Type: application/json" -d '{"path":"...","content":"..."}'
 
 Begin your task now by reading the context file and following the instructions.
 `,
@@ -407,7 +432,90 @@ Begin your task now by reading the context file and following the instructions.
 		agentDir,
 		o.state.SessionID,
 		agentDir,
+		contextFile,
 	)
+}
+
+// generateAgentSettings generates .claude/settings.local.json for agent permissions
+func (o *Orchestrator) generateAgentSettings(agentDir string) error {
+	claudeDir := filepath.Join(agentDir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		return fmt.Errorf("failed to create .claude directory: %w", err)
+	}
+
+	// Get absolute paths for permission patterns
+	absAgentDir, err := filepath.Abs(agentDir)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute agent dir: %w", err)
+	}
+
+	absSwarmDir, err := filepath.Abs(o.swarmDir)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute swarm dir: %w", err)
+	}
+
+	settings := map[string]interface{}{
+		"dangerouslySkipPermissions": []string{
+			// HTTP operations (for API calls)
+			"Bash(curl:*)",
+			"Bash(wget:*)",
+
+			// File exploration
+			"Bash(ls:*)",
+			"Bash(tree:*)",
+			"Bash(find:*)",
+
+			// File reading (for context and codebase exploration)
+			"Bash(cat:*)",
+			"Bash(head:*)",
+			"Bash(tail:*)",
+			"Bash(less:*)",
+			"Bash(more:*)",
+
+			// Searching
+			"Bash(grep:*)",
+			"Bash(rg:*)",
+			"Bash(ag:*)",
+
+			// Basic operations
+			"Bash(echo:*)",
+			"Bash(printf:*)",
+			"Bash(wc:*)",
+			"Bash(cut:*)",
+			"Bash(awk:*)",
+			"Bash(sed:*)",
+
+			// Git operations (read-only)
+			"Bash(git status:*)",
+			"Bash(git log:*)",
+			"Bash(git diff:*)",
+			"Bash(git show:*)",
+			"Bash(git branch:*)",
+
+			// Directory operations
+			"Bash(pwd:*)",
+			"Bash(cd:*)",
+
+			// Read access to agent directory
+			fmt.Sprintf("Read(%s/**/*)", absAgentDir),
+
+			// Read access to swarm directory
+			fmt.Sprintf("Read(%s/**/*)", absSwarmDir),
+		},
+	}
+
+	data, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal settings: %w", err)
+	}
+
+	settingsFile := filepath.Join(claudeDir, "settings.local.json")
+	if err := os.WriteFile(settingsFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write settings file: %w", err)
+	}
+
+	fmt.Printf("Generated agent settings: %s\n", settingsFile)
+	return nil
 }
 
 // extractQuestionNumber extracts the question number from a filename

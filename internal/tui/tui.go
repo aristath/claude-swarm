@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/aristath/claude-swarm/internal/orchestrator"
+	"github.com/aristath/claude-swarm/internal/server"
 	"github.com/aristath/claude-swarm/internal/state"
 	"github.com/aristath/claude-swarm/internal/workflow"
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,6 +28,7 @@ type MainModel struct {
 	planningModel   PlanningModel
 	orchestration   OrchestrationModel
 	orchestratorSvc *orchestrator.Orchestrator
+	apiServer       *server.Server
 	ready           bool
 }
 
@@ -51,6 +53,9 @@ func (m MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			if m.orchestratorSvc != nil {
 				m.orchestratorSvc.Stop()
+			}
+			if m.apiServer != nil {
+				m.apiServer.Stop()
 			}
 			return m, tea.Quit
 		}
@@ -133,6 +138,17 @@ func (m MainModel) startOrchestration() (tea.Model, tea.Cmd) {
 	}
 
 	m.orchestratorSvc = orch
+
+	// Create API server on port 8080
+	apiServer := server.NewServer(swarmState, m.swarmDir, 8080)
+	m.apiServer = apiServer
+
+	// Start API server in background
+	go func() {
+		if err := apiServer.Start(); err != nil {
+			fmt.Printf("API server error: %v\n", err)
+		}
+	}()
 
 	// Start orchestrator in background
 	go func() {
