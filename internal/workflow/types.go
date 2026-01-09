@@ -62,14 +62,15 @@ type FollowUp struct {
 type EventType string
 
 const (
-	EventQuestionAsked     EventType = "question_asked"
-	EventQuestionAnswered  EventType = "question_answered"
-	EventFollowUpAsked     EventType = "followup_asked"
-	EventFollowUpAnswered  EventType = "followup_answered"
-	EventTaskStarted       EventType = "task_started"
-	EventTaskCompleted     EventType = "task_completed"
-	EventTaskFailed        EventType = "task_failed"
-	EventAgentStatusUpdate EventType = "agent_status_update"
+	EventQuestionAsked         EventType = "question_asked"
+	EventQuestionAnswered      EventType = "question_answered"
+	EventFollowUpAsked         EventType = "followup_asked"
+	EventFollowUpAnswered      EventType = "followup_answered"
+	EventTaskStarted           EventType = "task_started"
+	EventTaskCompleted         EventType = "task_completed"
+	EventTaskFailed            EventType = "task_failed"
+	EventAgentStatusUpdate     EventType = "agent_status_update"
+	EventFileOperationRequest  EventType = "file_operation_request"
 )
 
 // FileEvent represents a file system event detected by the monitor

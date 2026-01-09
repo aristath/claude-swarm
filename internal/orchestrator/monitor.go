@@ -185,6 +185,12 @@ func (m *FileMonitor) detectEventType(path string) string {
 
 	case filename == "status.txt":
 		return string(workflow.EventAgentStatusUpdate)
+
+	case strings.HasPrefix(filename, "msg-") && strings.HasSuffix(filename, ".json"):
+		// messages/msg-N.json
+		if strings.Contains(path, "/messages/") {
+			return string(workflow.EventFileOperationRequest)
+		}
 	}
 
 	return ""

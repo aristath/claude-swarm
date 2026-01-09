@@ -13,12 +13,13 @@ import (
 
 // Orchestrator coordinates the swarm execution
 type Orchestrator struct {
-	swarmDir    string
-	state       *state.SwarmState
-	monitor     *FileMonitor
-	persistence *state.Persistence
-	parser      *workflow.Parser
-	done        chan bool
+	swarmDir       string
+	state          *state.SwarmState
+	monitor        *FileMonitor
+	persistence    *state.Persistence
+	parser         *workflow.Parser
+	messageHandler *MessageHandler
+	done           chan bool
 }
 
 // NewOrchestrator creates a new orchestrator
@@ -28,14 +29,19 @@ func NewOrchestrator(swarmDir string, swarmState *state.SwarmState) (*Orchestrat
 		return nil, fmt.Errorf("failed to create file monitor: %w", err)
 	}
 
-	return &Orchestrator{
+	orch := &Orchestrator{
 		swarmDir:    swarmDir,
 		state:       swarmState,
 		monitor:     monitor,
 		persistence: state.NewPersistence(swarmDir),
 		parser:      workflow.NewParser(),
 		done:        make(chan bool),
-	}, nil
+	}
+
+	// Initialize message handler (needs reference to orchestrator)
+	orch.messageHandler = NewMessageHandler(orch)
+
+	return orch, nil
 }
 
 // Run starts the orchestrator
@@ -103,6 +109,9 @@ func (o *Orchestrator) handleEvent(event workflow.FileEvent) error {
 
 	case workflow.EventFollowUpAnswered:
 		return o.handleFollowUpAnswered(event)
+
+	case workflow.EventFileOperationRequest:
+		return o.messageHandler.HandleMessage(event.FilePath)
 
 	case workflow.EventAgentStatusUpdate:
 		// Just log it, state updates happen elsewhere
@@ -241,7 +250,7 @@ func (o *Orchestrator) spawnAgent(task workflow.Task) error {
 	}
 
 	// Create subdirectories
-	for _, subdir := range []string{"questions", "followup"} {
+	for _, subdir := range []string{"questions", "followup", "messages", "responses"} {
 		if err := os.MkdirAll(filepath.Join(agentDir, subdir), 0755); err != nil {
 			return fmt.Errorf("failed to create %s directory: %w", subdir, err)
 		}
@@ -319,16 +328,38 @@ You can communicate with the orchestrator (Claude A) using the swarm-agent CLI:
 
    The orchestrator will respond based on the original plan.
 
-2. **When you complete your task**:
+2. **File Operations via Message Bus** (NO PERMISSION PROMPTS):
+   All file operations go through the orchestrator - no permission prompts!
+
+   # Read a file
+   swarm-agent file-read /path/to/file
+
+   # Write a file
+   swarm-agent file-write /path/to/file "content here"
+
+   # Edit a file (replace text)
+   swarm-agent file-edit /path/to/file --old "old text" --new "new text"
+
+   # Execute bash command
+   swarm-agent bash "ls -la" --dir /some/directory
+
+   # Search for files with glob pattern
+   swarm-agent glob "**/*.go"
+
+   IMPORTANT: Use these commands instead of trying to read/write files directly.
+   The orchestrator will execute operations on your behalf.
+
+3. **When you complete your task**:
    swarm-agent complete --output "Your final output here"
 
    This will mark the task as complete and trigger dependent tasks.
 
 ## Instructions
 1. Work on your task autonomously
-2. Ask questions if you need guidance (orchestrator has the full plan)
-3. Write your output when done using swarm-agent complete
-4. Be thorough and follow the plan's intent
+2. Use swarm-agent commands for ALL file operations (no permission prompts)
+3. Ask questions if you need guidance (orchestrator has the full plan)
+4. Write your output when done using swarm-agent complete
+5. Be thorough and follow the plan's intent
 
 Begin your task now.
 `,
@@ -356,11 +387,18 @@ Your working directory: %s
 
 You have access to the swarm-agent CLI tool for communication:
 - swarm-agent ask "question" - Ask the orchestrator for guidance
+- swarm-agent file-read <path> - Read a file (no permission prompts)
+- swarm-agent file-write <path> <content> - Write a file
+- swarm-agent file-edit <path> --old "..." --new "..." - Edit a file
+- swarm-agent bash <command> - Execute bash command
+- swarm-agent glob <pattern> - Search files with glob pattern
 - swarm-agent complete --output "results" - Mark task complete
 
 Environment variables:
 export SWARM_SESSION_ID=%s
 export SWARM_AGENT_DIR=%s
+
+IMPORTANT: Use swarm-agent commands for ALL file operations to avoid permission prompts.
 
 Begin your task now by reading the context file and following the instructions.
 `,
